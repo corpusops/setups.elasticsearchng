@@ -1,0 +1,22 @@
+- set_fact:
+    es_host_dirs: |
+        {% set directories = [] %}
+        {% for es_volume in es_volumes %}
+        {% set d = es_volume.split(':')[0] %}
+        {% set _ = directories.append(d) %}
+        {% endfor %}
+        {% set _ = directories.append(es_data_volume) %}
+        {{ directories | to_json }}
+- file:
+    path: "{{item}}"
+    mode: "0711"
+    state: directory
+  with_items: "{{es_host_dirs}}"
+- file:
+    state: directory
+    path: "{{es_versioned_hostdir}}"
+- file:
+    state: link
+    force: true
+    src: "{{es_versioned_hostdir}}"
+    path: "{{es_hostdir}}"

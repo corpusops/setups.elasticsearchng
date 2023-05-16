@@ -1,0 +1,14 @@
+---
+- include_role: {name: es/vars}
+- include_role: {name: corpusops.roles/services_virt_docker}
+  tags: [docker_setup] 
+- include_role: {name: es/service_stop}
+  tags: [service, es_service, es_service_stop]
+- include_role: {name: es/configure}
+  tags: [configs, es_configure]
+- include_role: {name: es/service_start}
+  tags: [service, es_service, es_service_start]
+- include_role: {name: es/post}
+  tags: [post]
+- include_role: {name: es/securityadmin}
+  tags: [securityadmin]

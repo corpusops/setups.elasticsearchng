@@ -1,0 +1,65 @@
+# ansible managed
+{{- $v := dict "$" $ }}
+{{- $v := merge $v ( dict "Env"                    .Env) }}
+{{- $v := merge $v ( dict "real_ip_from_recursive" ( .Env.NGINX_REAL_IP_FROM_RECURSIVE | default "on" )                           ) }}
+{{- $v := merge $v ( dict "real_ip_from"           ( .Env.NGINX_REAL_IP_FROM | default "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16" )) }}
+{{- $v := merge $v ( dict "real_ip_header"         ( .Env.NGINX_REAL_IP_HEADER | default "x-forwarded-for" )                      ) }}
+{{- $v := merge $v ( dict "log_level"              ( .Env.NGINX_LOGLEVEL | default "crit" )                                       ) }}
+{{- $v := merge $v ( dict "maxbodysize"            ( .Env.NGINX_MAXBODYSIZE | default "0" )                                      ) }}
+{{- $v := merge $v ( dict "pb"                     ( .Env.NGINX_PROXYBUFFERING | default "off" )                                  ) }}
+{{- $v := merge $v ( dict "allowcors"                     ( .Env.NGINX_ES_ALLOW_CORS | default "1" )                                  ) }}
+{{- $v := merge $v ( dict "forcessl"               ( .Env.NGINX_FORCESSL | default "1" )                                          ) }}
+{{- $v := merge $v ( dict "proxytimeout"           ( .Env.NGINX_PROXYTIMEOUT | default (mul 60 60 4) )                ) }}
+# optimize internal nginx buffers
+types_hash_max_size 2048; variables_hash_max_size 1024; variables_hash_bucket_size 256; server_names_hash_bucket_size 256; server_names_hash_max_size 1024;
+tcp_nodelay on; client_body_temp_path /tmp/client_body_temp; proxy_temp_path /tmp/proxy_temp; fastcgi_temp_path /tmp/fastcgi_temp; uwsgi_temp_path /tmp/uwsgi_temp; scgi_temp_path /tmp/scgi_temp;
+# Obtain best http host
+map $http_host $this_host { default $http_host; '' $host; }
+map $http_x_forwarded_host $best_http_host { default $http_x_forwarded_host; '' $this_host; }
+# activate real_ip logging
+real_ip_header {{ $v.real_ip_header }};real_ip_recursive {{ $v.real_ip_from_recursive }};{{ range $v.real_ip_from | splitList " " }}set_real_ip_from {{ . }};{{ end }}
+# dont log LB or other heatlhcheck requests
+map $request_method $method_loggable1 {OPTIONS 0;default 1;}
+map $method_loggable1 $method_loggable  {"~0" 0;default 1;}
+map $http_x_forwarded_proto $x_forwarded_proto { default $http_x_forwarded_proto; "" $scheme; }
+map "$http_x_ssl$http_x_forwarded_proto" $forwarded_ssl_scheme {default $scheme; "~(1|https|ssl)" https;}
+map "$http_x_ssl$http_x_forwarded_proto" $gunicorn_x_forwarded_proto {default $scheme; "~(1|https|ssl)" ssl;}
+log_format custom_timed_combined '$remote_addr - "$remote_user" - $host - [$time_iso8601] - "$request" $status $body_bytes_sent "$http_referer" "$http_user_agent" $request_time $upstream_response_time $pipe';
+upstream es { server es:9200; }
+upstream dashboards { server dashboards:5601; }
+{{- define "pass" }}
+    proxy_http_version 1.1;
+    proxy_cookie_path / "/; Secure";
+    proxy_set_header Host $http_host;
+    proxy_set_header X-Real-IP $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $gunicorn_x_forwarded_proto;
+    proxy_buffering {{.pb}}; proxy_request_buffering {{.pb}};
+    proxy_send_timeout {{.proxytimeout}};proxy_read_timeout {{.proxytimeout}};
+    proxy_pass {{.pscheme}}://{{.upstream}};
+    {{ if .vhostblocks | has "es" }}{{ template "cors" . }}{{ end }}
+{{- end }}
+{{- define "forcessl" }}if ($forwarded_ssl_scheme != "https"){ rewrite ^(.*)$ https://$host$1 permanent; }{{ end }}
+{{- define "cors" }}
+{{- if .allowcors | eq "1" }}
+add_header 'Access-Control-Allow-Origin' '*' always;
+add_header 'Access-Control-Allow-Credentials' 'true' always;
+add_header 'Access-Control-Allow-Methods' 'HEAD, GET, POST, OPTIONS, PUT, DELETE' always;
+add_header 'Access-Control-Allow-Headers' 'Authorization,DNT,X-Mx-ReqToken,Keep-Alive,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type' always;
+{{- end }}
+{{- end }}
+{{- define "vhost" }}
+server {
+    listen 80  {{ if .vhostblocks | has "default" }}default_server{{ end }};server_tokens off;
+    server_name {{.name}} {{ .alias | default "" }};
+    access_log /dev/stdout custom_timed_combined if=$method_loggable;
+    error_log syslog:server=log:10514,tag=nginx_error {{.log_level}};
+    chunked_transfer_encoding on;client_max_body_size {{ .maxbodysize }};
+    {{ if eq .forcessl  "1" }}{{ template "forcessl" . }}{{ end }}
+    location / { {{ template "pass" . }} }
+}
+{{- end }}
+{{- template "vhost" ( $v | merge  ( dict "pscheme" "https" "name" .Env.ES_DOMAIN           "upstream" "es"          "vhostblocks" ( list "es" "default") ) ) }}
+{{- if (( .Env.NO_DASHBOARDS | default "" ) | ne "1") | and (( .Env.ES_DASHBOARDS_DOMAIN | default "" ) | ne "") }}
+{{-  template "vhost" ( $v | merge ( dict "pscheme" "http" "name" .Env.ES_DASHBOARDS_DOMAIN "upstream" "dashboards"  "vhostblocks" ( list "dashboard"   ) ) ) }}
+{{- end }}

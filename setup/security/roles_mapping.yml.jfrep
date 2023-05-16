@@ -1,0 +1,13 @@
+---
+# In this file users, backendroles and hosts can be mapped to Security roles.
+# Permissions for OpenSearch roles are configured in roles.yml
+
+_meta:
+  type: "rolesmapping"
+  config_version: 2
+
+# Define your roles mapping here
+
+## Demo roles mapping
+
+{% if es_roles_mapping %}{{es_roles_mapping | to_nice_yaml }}{% endif %}

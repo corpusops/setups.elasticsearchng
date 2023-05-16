@@ -1,0 +1,168 @@
+---
+# ansible managed
+version: '3.7'
+x-blocks:
+  env: &env {env_file: [.env]}
+  restart: &restart {restart: "$ES_RESTART_POLICY"}
+  reg_extra_hosts: &reg_extra_hosts
+    extra_hosts:
+      localhost2: 127.0.0.1
+{%- for i, v in es_extra_hosts.items() %}
+      {{i}}: "{{v}}"
+{%- endfor %}
+  deps: &deps
+    <<: [ *env, *restart, *reg_extra_hosts ]
+    depends_on: [log]
+  full: &full
+    <<: [ *deps ]
+    depends_on: [log, setup-ubuntu, setup-amzn]
+  setup: &setup
+    <<: [ *deps ]
+    image: "$ES_BACKUP_IMAGE"
+    volumes: [helpers:/helpers, "{{es_data_volume}}:/data", "./cfg:/cfg"]
+    logging: {driver: syslog, options: {tag: "setup", syslog-address: "tcp://{{es_syslog_net}}"}}
+    entrypoint:
+    - bash
+    - "-ec"
+    - |-
+      . /etc/os-release
+      hd="/helpers/$${ID}"
+      export PATH=$$hd:$$PATH
+      [[ ! -e $$hd ]] && mkdir -pv $$hd
+      echo "Refresh helpers" >&2 && cp -vf /usr/bin/diff /cops_helpers/* $$hd
+      # be sure to do it on only one container side
+      if ( echo $$ID | egrep -q ubuntu );then
+        /cfg/gencert.sh admin node
+      fi
+      while true;do printf "HTTP/1.1 200 OK\nContent-Length: 7\n\nstarted\n"|( nc -l -p 80 || /bin/true);done
+networks:
+  es:
+    driver: bridge
+    name: "${ES_NETWORK_NAME:-es}"
+    ipam: {driver: default, config: [{subnet: "${ES_NETWORK}.0/24"}]}
+services:
+  setup-amzn:
+    <<: [ *setup ]
+    image: corpusops/amazonlinux-bare:2
+    networks: {es: {ipv4_address: "${ES_NETWORK}.211"}}
+  setup-ubuntu:
+    <<: [ *setup ]
+    image: corpusops/ubuntu-bare:20.04
+    networks: {es: {ipv4_address: "${ES_NETWORK}.221"}}
+  log:
+    # replace stock image to add support for better logrotation and retention
+    <<: [ *full ]
+    depends_on: []
+    image: corpusops/rsyslog
+    user: root
+    networks: {es: {ipv4_address: "${ES_NETWORK}.241"}}
+    volumes: [logs:/var/log, ./logrotate:/entry/logrotate.d]
+    ports: ["{{es_syslog_net}}:10514"]
+  es:
+    <<: [ *full ]
+    image: "{{es_images_es}}"
+    user: root
+    entrypoint:
+    - bash
+    - "-exc"
+    - |-
+      exec 2>&1
+      export PATH=/helpers/amzn:$PATH
+      while ! (dockerize --version; );do echo wdockerize;done
+      dockerize -wait http://setup-amzn   -timeout 900s
+      dockerize -wait http://setup-ubuntu -timeout 900s
+      mkdir -pv /alllogs/es || true
+      rm -rf logs && ln -sfv /alllogs/es logs
+      cp -rfv /cfg/. $$( ls /data/ssl/*.pem || true ) config
+      cp -v /data/ssl/{root-ca,node}.pem /etc/pki/ca-trust/source/anchors && update-ca-trust extract
+      ( set +x && while true;do echo "Generating security files" \
+       && cp -rfv /security/. plugins/opensearch-security/securityconfig \
+       && cd plugins/opensearch-security/securityconfig/ \
+       && for e in frep jfrep;do while read f;do printf " -> $$f" &&\
+           frep $$f:$$(basename $$f .$$e) --overwrite;done \
+            < <( find -name "*$$e" );done \
+       && echo && cd - &>/dev/null;sleep 60;done& )
+      ( cd config && for e in frep jfrep;do
+        while read f;do frep $$f:$$(basename $$f .$$e) --overwrite;done \
+        < <( find -name "*$$e" );done )
+      chmod -R g+rw                   /alllogs/es config data
+      chown -Rf opensearch:opensearch /alllogs/es config data
+      if [[ -n "$$0" ]];then exec gosu opensearch "$$0" "$$@";fi
+    command: "./opensearch-docker-entrypoint.sh $${@-}"
+    volumes:
+    - "{{es_data_volume}}:/data"
+    - data:/usr/share/opensearch/data
+    - logs:/alllogs
+    - ./cfg/:/cfg
+    - ./security/:/security
+    - helpers:/helpers
+    logging: {driver: syslog, options: {tag: "es", syslog-address: "tcp://{{es_syslog_net}}"}}
+    networks: {es: {ipv4_address: "${ES_NETWORK}.245",
+                    aliases: [es, node, node1]}}
+    ports:
+    - "{{es_listen_int_if}}:{{es_listen_app_port}}:9200"
+    - "{{es_listen_int_if}}:{{es_listen_tapp_port}}:9300"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      # maximum number of open files for the OpenSearch user, set to at least 65536 on modern systems
+      nofile:
+        soft: 65536
+        hard: 65536
+{%- if 'opensearch' in es_images_es %}
+  dashboards:
+    <<: [ *full ]
+    env_file: &denv [.denv, .env]
+    image: opensearchproject/opensearch-dashboards:latest
+    networks: {es: {ipv4_address: "${ES_NETWORK}.235"}}
+    logging: {driver: syslog, options: {tag: "dashboard", syslog-address: "tcp://{{es_syslog_net}}"}}
+{%- endif %}
+    depends_on: [es]
+    ports:
+    - "{{es_listen_int_if}}:{{es_listen_kibana_port}}:5601"
+  proxy:
+    <<: [ *full ]
+    depends_on: [es, dashboards]
+    volumes: [./nginx:/etc/nginx.d, nginx:/nginx, helpers:/helpers, logs:/alllogs]
+    image: "{{es_images_nginx}}"
+    logging: {driver: syslog, options: {tag: "nginx", syslog-address: "tcp://{{es_syslog_net}}"}}
+    networks: {es: {ipv4_address: "${ES_NETWORK}.246"}}
+    ports:
+    - "{{es_listen_if}}:{{es_public_http_port}}:80"
+    - "{{es_listen_if}}:{{es_public_https_port}}:80"
+    user: "root"
+    entrypoint:
+    - /bin/bash
+    - "-exc"
+    - |-
+      exec 2>&1
+      export PATH=/helpers/ubuntu:$PATH
+      while ! (dockerize --version; );do echo wdockerize;done
+      dockerize -wait http://setup-ubuntu -timeout 900s
+      mkdir -pv /alllogs/nginx || true
+      ln -sfv /alllogs/nginx /logs
+      rm -vf /etc/nginx/conf.d/*.conf
+      cp -rfv /etc/nginx.d/* /etc/nginx
+      chmod -R g+rw    /alllogs/nginx etc/nginx* /nginx /var/log/nginx
+      chown -Rf :nginx /alllogs/nginx etc/nginx* /nginx /var/log/nginx
+      while read f;do
+        j=$$(echo $$f | sed -re "s/\.j?frep//g");frep $$f:$$j --overwrite
+      done < <( find /etc/nginx -name "*frep" )
+      sed -i -re "s/user [^;];/user nginx;/g" /etc/nginx/nginx.conf
+      chown nginx /proc/self/fd/{1,2}
+      exec gosu root nginx -g 'daemon off;'
+  dbsmartbackup:
+    <<: [ *full ]
+    image: "{{es_images_dbs}}"
+    logging: {driver: syslog, options: {tag: "dbs", syslog-address: "tcp://{{es_syslog_net}}"}}
+    networks: {es: {ipv4_address: "${ES_NETWORK}.138"}}
+    volumes: [dbs:/var/db_smart_backup/]
+volumes:
+  nginx:
+  dbs:
+  helpers:
+  logs:
+  htpasswd:
+  data:
+# vim: set ft=sls :

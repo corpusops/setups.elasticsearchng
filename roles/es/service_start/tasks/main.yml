@@ -1,0 +1,13 @@
+- include_role: {name: corpusops.roles/docker_compose_service}
+  vars:
+    _docker_compose_service:
+      project: "{{es_compose_project}}"
+      state: "{{es_started_state}}"
+      working_directory: "{{es_hostdir}}"
+      stdout: "{{es_stdout}}"
+      stderr: "{{es_stderr}}"
+- shell: |-
+    set -ex
+    cd "{{es_hostdir}}"
+    docker-compose -p {{es_compose_project}} up -d
+  tags: [es_restart_services]

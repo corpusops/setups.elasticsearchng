@@ -1,0 +1,390 @@
+---
+es_version: "1.2.2"
+es_domain: es.foo.bar
+es_dashboards_domain: "{% set p = es_domain.split('.')%}{{ (['{0}-dashboards'.format(p[0])]+p[1:])|join('.') }}"
+es_images_dbs: "corpusops/dbsmartbackup:{{es_images_es.split('/')[1].replace(':', '-')}}"
+es_images_nginx: "corpusops/nginx:1.21"
+es_security_cmd: plugins/opensearch-security/tools/securityadmin.sh -icl -nhnv -cacert /data/ssl/root-ca.pem -cert /data/ssl/admin.pem -key /data/ssl/admin-key.pem
+es_security_backup_dir: /data/securitybackup
+es_images_es: "corpusops/opensearch:{{es_version}}"
+es_extra_hosts: {}
+es_basedir: /srv/docker/es
+es_data_volume: "{{es_basedir}}/data"
+es_hostdir: "{{es_basedir}}/current"
+es_versioned_hostdir: "{{es_basedir}}/{{es_version}}"
+es_volumes:
+- "{{es_hostdir}}"
+es_cfg_version: "{% set p = es_version.split('.') %}{% set v = '{p[0]}.{p[1]}.0'.format(p=p) %}{{v}}"
+es_vversion: "v{{es_version}}"
+es_network: 172.34.0
+es_default_password: admin
+es_password: xxxtR7487913189781az
+es_password_admin: "{{es_password }}"
+es_password_kibanaserver: "{{es_password }}"
+es_password_kibanaro: "{{es_password }}"
+es_password_logstash: "{{es_password }}"
+es_password_readall: "{{es_password }}"
+es_password_snapshotrestore: "{{es_password }}"
+es_nodes_dn: "{{es_nodes_dn_default}}"
+es_nodes_dn_default: {}
+es_roles_mapping: "{% set r = es_roles_mapping_default.copy() %}{% set _ = r.update(es_roles_mapping_custom) %}{{r}}"
+es_roles_mapping_custom: {}
+es_roles_mapping_default:
+  all_access: {reserved: false, backend_roles: ["admin"], description: "Maps admin to all_access"}
+  own_index: {reserved: false, users: ["*"], description: "Allow full access to an index named like the username"}
+  logstash: {reserved: false, backend_roles: ["logstash"]}
+  kibana_user: {reserved: false, backend_roles: ["kibanauser"], description: "Maps kibanauser to kibana_user"}
+  readall: {reserved: false, backend_roles: ["readall"]}
+  manage_snapshots: {reserved: false, backend_roles: ["snapshotrestore"]}
+  kibana_server: {reserved: true, users: ["kibanaserver"]}
+es_whitelist_enabled: false
+es_whitelist_requests: "{{es_whitelist_requests_default}}"
+es_whitelist_requests_default: {}
+#   /_cluster/settings:
+#     - GET
+#   /_cat/nodes:
+#     - GET
+es_whitelist:
+  config:
+    enabled: "{{es_whitelist_enabled}}"
+    requests: "{{es_whitelist_requests}}"
+es_users: "{% set r = es_users_default.copy() %}{% set _ = r.update(es_users_custom) %}{{r}}"
+es_users_custom: {}
+es_users_default:
+  admin:
+    hash: "{{es_password_admin|password_hash('bcrypt')}}"
+    reserved: true
+    backend_roles: ["admin"]
+    description: "admin user"
+  kibanaserver:
+    hash: "{{es_password_kibanaserver|password_hash('bcrypt')}}"
+    reserved: true
+    description: "OpenSearch Dashboards user"
+  kibanaro:
+    hash: "{{es_password_kibanaro|password_hash('bcrypt')}}"
+    reserved: false
+    backend_roles: ["kibanauser", "readall"]
+    attributes: {attribute1: "value1", attribute2: "value2", attribute3: "value3"}
+    description: "OpenSearch Dashboards read only user"
+  logstash:
+    hash: "{{es_password_logstash|password_hash('bcrypt')}}"
+    reserved: false
+    backend_roles: ["logstash"]
+    description: "logstash user"
+  readall:
+    hash: "{{es_password_readall|password_hash('bcrypt')}}"
+    reserved: false
+    backend_roles: ["readall"]
+    description: "readall user"
+  snapshotrestore:
+    hash: "{{es_password_snapshotrestore|password_hash('bcrypt')}}"
+    reserved: false
+    backend_roles: ["snapshotrestore"]
+    description: "snapshotrestore user"
+#
+es_compose_project: "{{es_basedir|copsf_basename}}"
+es_public_http_port: 80
+es_public_https_port: 443
+es_http_port: 8080
+es_hosts: ["_default_"]
+# do not change this unless you use external database
+es_compose_files: [docker-compose.yml]
+es_dbs_compression: nocomp
+es_docker_dot_env: "{{es_docker_dot_env_default}}"
+es_scripts_dotenv: "{{es_scripts_dotenv_default}}"
+es_docker_dot_env_common_default: |-
+  DOCKER_BUILDKIT=1
+  COMPOSE_DOCKER_CLI_BUILD=1
+  BUILDKIT_PROGRESS=plain
+  BUILDKIT_INLINE_CACHE=1
+  ES_NETWORK={{es_network}}
+  ESSCRIPTS_NETWORK={{es_network}}
+  ES_VERSION={{es_version}}
+es_docker_dot_env_extra: |-
+  # extra
+es_docker_dot_env_default: |-
+  # ansible managed
+  {{es_docker_dot_env_common_default}}
+  #
+  COMPOSE_PROJECT_NAME={{es_compose_project}}
+  CONTROL_COMPOSE_FILES={{es_compose_files|join(' ')}}
+  COMPOSE_FILE={{es_compose_files|join(':')}}
+  ES_USERNAME={{es_admin_user}}
+  ES_PASSWORD={{es_password}}
+  ES_DOMAIN={{es_domain}}
+  ES_DASHBOARDS_DOMAIN={{es_dashboards_domain}}
+  NGINX_REAL_IP_FROM={{es_real_ip_from}}
+  DATA_FOLDER=/data
+  ES_KEEP_DUMPS={{es_keep_dumps}}
+  ES_RESTART_POLICY={{es_restart_policy}}
+  #
+  ES_DBS_COMPRESSION={{es_dbs_compression}}
+  NGINX_LOGLEVEL={{es_nginx_loglevel}}
+  #
+  {% if 'opensearch' in es_images_es %}
+  {{ es_opensearch_env }}
+  {% endif %}
+  {{ es_docker_dot_env_extra }}
+es_syslog_net: 127.0.0.1:1514
+es_opensearch_node_name: opensearch-node1
+es_opensearch_cluster_name: opensearch-cluster
+es_opensearch_env: "{{es_opensearch_env_default}}"
+es_node_dns: ['CN=node,CN=CA,OU=es']
+es_admin_dns: ['CN=admin,CN=CA,OU=es']
+es_opensearch_opensearchyml: |-
+  cluster.name: {{es_opensearch_cluster_name}}
+  node.name: {{es_opensearch_node_name}}
+  network.host: 0.0.0.0
+  bootstrap.memory_lock: true
+  discovery.type: {{es_discovery_type}}
+  plugins.security.ssl.http.clientauth_mode: OPTIONAL
+  plugins.security.allow_default_init_securityindex: true
+  plugins.security.audit.type: internal_opensearch
+  plugins.security.check_snapshot_restore_write_privileges: true
+  plugins.security.enable_snapshot_restore_privilege: true
+  plugins.security.ssl.http.enabled: true
+  plugins.security.restapi.roles_enabled: ["all_access", "security_rest_api_access"]
+  plugins.security.ssl.transport.enforce_hostname_verification: {{es_enforce_hostname_verification}}
+  #
+  plugins.security.nodes_dn: {{es_node_dns|to_json}}
+  plugins.security.authcz.admin_dn: {{es_admin_dns|to_json}}
+  #
+  plugins.security.ssl.transport.pemtrustedcas_filepath: root-ca.pem
+  plugins.security.ssl.transport.pemcert_filepath: node.pem
+  plugins.security.ssl.transport.pemkey_filepath: node-key.pem
+  #
+  plugins.security.ssl.http.pemtrustedcas_filepath: root-ca.pem
+  plugins.security.ssl.http.pemcert_filepath: node.pem
+  plugins.security.ssl.http.pemkey_filepath: node-key.pem
+es_enforce_hostname_verification: "false"
+es_opensearch_dashboards_env_default: |-
+  OPENSEARCH_USERNAME=kibanaserver
+  OPENSEARCH_PASSWORD={{es_password_kibanaserver}}
+es_opensearch_dashboards_env: "{{es_opensearch_dashboards_env_default}}"
+es_opensearch_env_default: |-
+es_opensearch_env_default: |-
+  DISABLE_INSTALL_DEMO_CONFIG=true
+  OPENSEARCH_JAVA_OPTS={{es_java_opts}}
+  OPENSEARCH_HOSTS=["https://node:9200"]
+es_discovery_type: single-node
+es_nginx_loglevel: info
+es_java_opts: "-Xms{{es_ramu}} -Xmx{{es_ramu}}"
+es_scripts_dotenv_default: |-
+  # ansible managed
+  {{es_docker_dot_env_common_default}}
+  #
+  USER_UID={{es_scripts_uid}}
+  USER_GID={{es_scripts_gid}}
+  COMPOSE_FILE={{es_scripts_dc|join(":")}}
+  DATA_FOLDER={{es_data_volume}}/scripts
+es_admin_user: admin
+es_real_ip_from: "10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 {{es_network}}.0/12"
+es_keep_dumps: "1"
+es_restart_policy: unless-stopped
+es_listen_if: 0.0.0.0
+es_listen_int_if: 127.0.0.1
+es_listen_kibana_port: 5601
+es_listen_app_port: 9200
+es_listen_tapp_port: 9300
+es_dcompose: docker-compose -p {{es_compose_project}}
+es_stopped_state: stopped
+es_started_state: started
+es_stdout: /dev/null
+es_stderr: /dev/null
+es_force_sync_ssh_user: null
+es_sync_ssh_user: ""
+es_sshargs: >-
+  {% set k = hostvars[inventory_hostname].get(
+                'ansible_ssh_private_key_file', '') %}
+  {% if k%}-o IdentityFile={{k}} -o IdentitiesOnly=yes{%endif%}
+  {% if (
+      hostvars[inventory_hostname].ansible_connection|default('ssh')
+     ) not in [ 'smart', 'local'] %}
+  {{ hostvars[inventory_hostname].ssh_args | default('') }}
+  {{ hostvars[inventory_hostname].ansible_ssh_args | default('') }}
+  {{ hostvars[inventory_hostname].ansible_ssh_common_args | default('') }}
+  {{ hostvars[inventory_hostname].ansible_ssh_extra_args | default('') }}
+  {% endif %}
+  {% if((es_force_sync_ssh_user) or
+        (es_sync_ssh_user and (es_force_sync_ssh_user == True))
+    )%}
+  {% set user = es_sync_ssh_user or ansible_user or '' %}
+  {% if user %}-l {{user}}{% endif %}
+  {% endif %}
+es_code_rsync_opts: ["-aAHzv"]
+es_scripts_dc: [docker-compose.yml, docker-compose-dev.yml]
+es_scripts_uid: "0"
+es_scripts_gid: "0"
+es_sysctls: "{{es_sysctls_default}}"
+es_sysctls_default:
+  vm.max_map_count: "{{es_max_map_count}}"
+es_max_map_count: "{{1000000*(es_ram*10/100)|int}}"
+es_ram: 8096
+es_ramu: "{{es_ram}}m"
+es_roles: "{% set r = es_roles_default.copy() %}{% set _ = r.update(es_roles_custom) %}{{r}}"
+es_roles_custom: {}
+es_roles_default:
+# Restrict users so they can only view visualization and dashboard on OpenSearchDashboards
+  kibana_read_only: {reserved: true}
+# The security REST API access role is used to assign specific users access to change the security settings through the REST API.
+  security_rest_api_access: {reserved: true}
+# Allows users to view monitors, destinations and alerts
+  alerting_read_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster:admin/opendistro/alerting/alerts/get'
+    - 'cluster:admin/opendistro/alerting/destination/get'
+    - 'cluster:admin/opendistro/alerting/monitor/get'
+    - 'cluster:admin/opendistro/alerting/monitor/search'
+# Allows users to view and acknowledge alerts
+  alerting_ack_alerts:
+    reserved: true
+    cluster_permissions:
+    - 'cluster:admin/opendistro/alerting/alerts/*'
+# Allows users to use all alerting functionality
+  alerting_full_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster_monitor'
+    - 'cluster:admin/opendistro/alerting/*'
+    index_permissions:
+    - index_patterns: ['*']
+      allowed_actions:
+      - 'indices_monitor'
+      - 'indices:admin/aliases/get'
+      - 'indices:admin/mappings/get'
+# Allow users to read Anomaly Detection detectors and results
+  anomaly_read_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster:admin/opendistro/ad/detector/info'
+    - 'cluster:admin/opendistro/ad/detector/search'
+    - 'cluster:admin/opendistro/ad/detectors/get'
+    - 'cluster:admin/opendistro/ad/result/search'
+    - 'cluster:admin/opendistro/ad/tasks/search'
+    - 'cluster:admin/opendistro/ad/detector/validate'
+    - 'cluster:admin/opendistro/ad/result/topAnomalies'
+# Allows users to use all Anomaly Detection functionality
+  anomaly_full_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster_monitor'
+    - 'cluster:admin/opendistro/ad/*'
+    index_permissions:
+    - index_patterns: ['*']
+      allowed_actions:
+      - 'indices_monitor'
+      - 'indices:admin/aliases/get'
+      - 'indices:admin/mappings/get'
+# Allows users to read Notebooks
+  notebooks_read_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster:admin/opendistro/notebooks/list'
+    - 'cluster:admin/opendistro/notebooks/get'
+# Allows users to all Notebooks functionality
+  notebooks_full_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster:admin/opendistro/notebooks/create'
+    - 'cluster:admin/opendistro/notebooks/update'
+    - 'cluster:admin/opendistro/notebooks/delete'
+    - 'cluster:admin/opendistro/notebooks/get'
+    - 'cluster:admin/opendistro/notebooks/list'
+# Allows users to read observability objects
+  observability_read_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster:admin/opensearch/observability/get'
+# Allows users to all Observability functionality
+  observability_full_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster:admin/opensearch/observability/create'
+    - 'cluster:admin/opensearch/observability/update'
+    - 'cluster:admin/opensearch/observability/delete'
+    - 'cluster:admin/opensearch/observability/get'
+# Allows users to read and download Reports
+  reports_instances_read_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster:admin/opendistro/reports/instance/list'
+    - 'cluster:admin/opendistro/reports/instance/get'
+    - 'cluster:admin/opendistro/reports/menu/download'
+# Allows users to read and download Reports and Report-definitions
+  reports_read_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster:admin/opendistro/reports/definition/get'
+    - 'cluster:admin/opendistro/reports/definition/list'
+    - 'cluster:admin/opendistro/reports/instance/list'
+    - 'cluster:admin/opendistro/reports/instance/get'
+    - 'cluster:admin/opendistro/reports/menu/download'
+# Allows users to all Reports functionality
+  reports_full_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster:admin/opendistro/reports/definition/create'
+    - 'cluster:admin/opendistro/reports/definition/update'
+    - 'cluster:admin/opendistro/reports/definition/on_demand'
+    - 'cluster:admin/opendistro/reports/definition/delete'
+    - 'cluster:admin/opendistro/reports/definition/get'
+    - 'cluster:admin/opendistro/reports/definition/list'
+    - 'cluster:admin/opendistro/reports/instance/list'
+    - 'cluster:admin/opendistro/reports/instance/get'
+    - 'cluster:admin/opendistro/reports/menu/download'
+# Allows users to use all asynchronous-search functionality
+  asynchronous_search_full_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster:admin/opendistro/asynchronous_search/*'
+    index_permissions:
+    - index_patterns: ['*']
+      allowed_actions:
+      - 'indices:data/read/search*'
+# Allows users to read stored asynchronous-search results
+  asynchronous_search_read_access:
+    reserved: true
+    cluster_permissions:
+    - 'cluster:admin/opendistro/asynchronous_search/get'
+# Allows user to use all index_management actions - ism policies, rollups, transforms
+  index_management_full_access:
+    reserved: true
+    cluster_permissions:
+    - "cluster:admin/opendistro/ism/*"
+    - "cluster:admin/opendistro/rollup/*"
+    - "cluster:admin/opendistro/transform/*"
+    index_permissions:
+    - index_patterns: ['*']
+      allowed_actions:
+      - 'indices:admin/opensearch/ism/*'
+# Allows users to use all cross cluster replication functionality at leader cluster
+  cross_cluster_replication_leader_full_access:
+    reserved: true
+    index_permissions:
+    - index_patterns: ['*']
+      allowed_actions:
+      - "indices:admin/plugins/replication/index/setup/validate"
+      - "indices:data/read/plugins/replication/changes"
+      - "indices:data/read/plugins/replication/file_chunk"
+# Allows users to use all cross cluster replication functionality at follower cluster
+  cross_cluster_replication_follower_full_access:
+    reserved: true
+    cluster_permissions:
+    - "cluster:admin/plugins/replication/autofollow/update"
+    index_permissions:
+    - index_patterns: ['*']
+      allowed_actions:
+      - "indices:admin/plugins/replication/index/setup/validate"
+      - "indices:data/write/plugins/replication/changes"
+      - "indices:admin/plugins/replication/index/start"
+      - "indices:admin/plugins/replication/index/pause"
+      - "indices:admin/plugins/replication/index/resume"
+      - "indices:admin/plugins/replication/index/stop"
+      - "indices:admin/plugins/replication/index/update"
+      - "indices:admin/plugins/replication/index/status_check"
+es_tenants: "{{es_tenants_default}}"
+es_tenants_default:
+  admin_tenant:
+    reserved: false
+    description: "Demo tenant for admin user"

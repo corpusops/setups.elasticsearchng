@@ -1,0 +1,1 @@
+- shell: "{{es_hostdir}}/apply_security.sh"

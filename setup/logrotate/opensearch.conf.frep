@@ -1,0 +1,12 @@
+# to be processed by frep
+/var/log/es/*.log
+{
+  daily
+  nodateext
+  missingok
+  rotate {{.Env.OPENSEARCH_ROTATE|default "365" }}
+  compress
+  copytruncate
+  delaycompress
+  notifempty
+}

@@ -1,0 +1,15 @@
+- include_role: {name: corpusops.roles/docker_compose_service}
+  vars:
+    _docker_compose_service:
+      project: "{{es_compose_project}}"
+      state: "{{es_stopped_state}}"
+      working_directory: "{{es_hostdir}}"
+      stdout: "{{es_stdout}}"
+      stderr: "{{es_stderr}}"
+  tags: [service_stop]
+- shell: |-
+    set -ex
+    if [ ! -e "{{es_hostdir}}/{{es_compose_files[0]}}" ];then exit 0;fi
+    cd {{es_hostdir}}
+    docker-compose down
+  tags: [service_dockercompose_stop]

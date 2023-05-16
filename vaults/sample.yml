@@ -1,0 +1,35 @@
+---
+all: {vars: {es_servers: dockeres_servers}}
+dockeres_servers:
+  hosts:
+    prod-docker-es.mycorp.com:
+  vars:
+    es_max_map_count: "{{8*1096}}"
+    es_admin_mail: "sysadmin+dockeres@mycorp.com"
+    es_ram: 8096
+    es_password: 123456789
+    es_password_kibanaserver: 9875346541
+    es_password_kibanaro: 5465465456
+    es_password_logstasha: 5465465456456
+    es_password_readall: 456456456/89789
+    es_password_snapshotrestore: 45645789789
+    es_domain: es.mycorp.com
+    es_roles_custom:
+      rmyindex_rw:
+        cluster_permissions: ["cluster_composite_ops", "cluster:monitor/main"]
+        index_permissions: [{index_patterns: [myindex], allowed_actions: ["*"]}]
+      rmyindex_ro:
+        cluster_permissions: ["cluster_composite_ops_ro"]
+        index_permissions: [{index_patterns: [myindex], allowed_actions: ["read"]}]
+      rmonit:
+        cluster_permissions: ["cluster_composite_ops_ro", "cluster:monitor/main"]
+        index_permissions: [{index_patterns: ["*"], allowed_actions: ["read"]}]
+    es_roles_mapping_custom:
+      rmyindex_rw: {backend_roles: [urmyindex_rw]}
+      rmyindex_ro: {backend_roles: [urmyindex_ro,
+                                 opendistro_security_anonymous_backendrole, anonymous_backendrole]}
+      rmonit: {backend_roles: [umonit]}
+    es_users_custom:
+      myindex:   {backend_roles: [urmyindex_rw], hash: "{{'121qsdf321qsd23'|password_hash('bcrypt')}}"}
+      myindexro: {backend_roles: [urmyindex_ro], hash: "{{'54sqd65f4qze564r'|password_hash('bcrypt')}}"}
+      monit:  {backend_roles: [umonit],    hash: "{{'564856saq4897489'|password_hash('bcrypt')}}"}

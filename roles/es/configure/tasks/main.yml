@@ -1,0 +1,5 @@
+---
+- include_role: {name: es/layout}
+  tags: [es_layout]
+- include_role: {name: es/configs}
+  tags: [es_configs]

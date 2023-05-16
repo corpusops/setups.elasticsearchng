@@ -1,0 +1,4 @@
+---
+- hosts: "{{es_servers|default('es_servers')}}"
+  roles:
+  - {name: es/setup, tags: [setup]}

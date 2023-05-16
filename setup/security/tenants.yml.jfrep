@@ -1,0 +1,8 @@
+---
+_meta:
+  type: "tenants"
+  config_version: 2
+
+# Define your tenants here
+## Demo tenants
+{% if es_tenants %}{{ es_tenants | to_nice_yaml}}{% endif %}

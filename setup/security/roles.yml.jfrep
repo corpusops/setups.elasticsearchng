@@ -1,0 +1,5 @@
+_meta:
+  type: "roles"
+  config_version: 2
+
+{% if es_roles %}{{es_roles | to_nice_yaml}}{% endif %}
