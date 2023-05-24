@@ -85,11 +85,12 @@ services:
       ( cd config && for e in frep jfrep;do
         while read f;do frep $$f:$$(basename $$f .$$e) --overwrite;done \
         < <( find -name "*$$e" );done )
-      chmod -R g+rw                   /alllogs/es config data
-      chown -Rf opensearch:opensearch /alllogs/es config data
+      chmod -R g+rw                   /alllogs/es config data {{es_snapshots_dir}}
+      chown -Rf opensearch:opensearch /alllogs/es config data {{es_snapshots_dir}}
       if [[ -n "$$0" ]];then exec gosu opensearch "$$0" "$$@";fi
     command: "./opensearch-docker-entrypoint.sh $${@-}"
     volumes:
+    - snapshots:/snapshots
     - "{{es_data_volume}}:/data"
     - data:/usr/share/opensearch/data
     - logs:/alllogs
@@ -157,12 +158,13 @@ services:
     image: "{{es_images_dbs}}"
     logging: {driver: syslog, options: {tag: "dbs", syslog-address: "tcp://{{es_syslog_net}}"}}
     networks: {es: {ipv4_address: "${ES_NETWORK}.138"}}
-    volumes: [dbs:/var/db_smart_backup/]
+    volumes: [dbs:/var/db_smart_backup, snapshots:/snapshots, "{{es_data_volume}}:/data"]
+    user: root
 volumes:
   nginx:
   dbs:
   helpers:
   logs:
-  htpasswd:
   data:
+  snapshots:
 # vim: set ft=sls :

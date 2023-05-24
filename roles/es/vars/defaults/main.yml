@@ -92,6 +92,8 @@ es_compose_files: [docker-compose.yml]
 es_dbs_compression: nocomp
 es_docker_dot_env: "{{es_docker_dot_env_default}}"
 es_scripts_dotenv: "{{es_scripts_dotenv_default}}"
+es_dbs_es_uri: "https://node:9200"
+es_dbs_es_extra_args: "-k"
 es_docker_dot_env_common_default: |-
   DOCKER_BUILDKIT=1
   COMPOSE_DOCKER_CLI_BUILD=1
@@ -106,13 +108,19 @@ es_docker_dot_env_default: |-
   # ansible managed
   {{es_docker_dot_env_common_default}}
   #
+  DBS_KEEP_LASTS={{es_dbs_lasts}}
+  DBS_KEEP_DAYS={{es_dbs_days}}
   COMPOSE_PROJECT_NAME={{es_compose_project}}
   CONTROL_COMPOSE_FILES={{es_compose_files|join(' ')}}
   COMPOSE_FILE={{es_compose_files|join(':')}}
   ES_USERNAME={{es_admin_user}}
+  ES_USER={{es_admin_user}}
+  ES_URI={{es_dbs_es_uri}}
+  ES_EXTRA_ARGS={{es_dbs_es_extra_args}}
   ES_PASSWORD={{es_password}}
   ES_DOMAIN={{es_domain}}
   ES_DASHBOARDS_DOMAIN={{es_dashboards_domain}}
+  ES_SNAPSHOTS_DIR={{es_snapshots_dir}}
   NGINX_REAL_IP_FROM={{es_real_ip_from}}
   DATA_FOLDER=/data
   ES_KEEP_DUMPS={{es_keep_dumps}}
@@ -125,6 +133,9 @@ es_docker_dot_env_default: |-
   {{ es_opensearch_env }}
   {% endif %}
   {{ es_docker_dot_env_extra }}
+es_dbs_days: "{{es_dbs_lasts}}"
+es_dbs_lasts: "2"
+es_snapshots_dir: /snapshots
 es_syslog_net: 127.0.0.1:1514
 es_opensearch_node_name: opensearch-node1
 es_opensearch_cluster_name: opensearch-cluster
@@ -136,6 +147,7 @@ es_opensearch_opensearchyml: |-
   node.name: {{es_opensearch_node_name}}
   network.host: 0.0.0.0
   bootstrap.memory_lock: true
+  path.repo: {{es_snapshots_dir}}
   discovery.type: {{es_discovery_type}}
   plugins.security.ssl.http.clientauth_mode: OPTIONAL
   plugins.security.allow_default_init_securityindex: true
